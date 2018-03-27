@@ -1,0 +1,49 @@
+    "a": "ا",
+    "b": "ب",
+    "t": "ت",
+    "th": "ث",
+    "j": "ج",
+    "h": "ح",
+    "kh": "خ",
+    "d": "د",
+    "dh": "ذ",
+    "r": "ر",
+    "z": "ز",
+    "s": "س",
+    "sh": "ش",
+    "s": "ص",
+    "d": "ض",
+    "t": "ط",
+    "z": "ظ",
+    "e": "ع",
+    "g": "غ",
+    "f": "ف",
+    "q": "ق",
+    "k": "ك",
+    "l": "ل",
+    "m": "م",
+    "n": "ن",
+    "h": "ه",
+    "w": "و",
+    "y": "ي",
+    "p": "ة", //teh marbuta
+
+    "a": '\u064E', // fatha
+    "u": '\u064f', // damma
+    "i": '\u0650', // kasra
+    "f": '\u064B', // fathatayn
+    "n": '\u064C', // dammatayn
+    "k": '\u064D', // kasratayn
+    "": '\u0651', // shadda
+    "": '\u0652', // sukun
+
+    "'": '\u0621', // lone hamza
+    "a": '\u0623', // hamza on alif
+    "a": '\u0625', // hamza below alif
+    "w": '\u0624', // hamza on wa
+    "y": '\u0626', // hamza on ya
+
+    "a": '\u0622', // madda on alif
+    "": '\u0671', // alif al-wasla
+    "a": '\u0670', // dagger alif
+    "a": '\u0649', // alif maqsura

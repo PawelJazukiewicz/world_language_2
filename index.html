@@ -1,0 +1,466 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>WorldLang</title>
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+
+</head>
+<style>
+  .borders {
+    fill: none;
+    stroke: #fff;
+    stroke-width: 0.5px;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+
+  .label {
+    z-index: 10;
+    pointer-events: none;
+    text-anchor: middle;
+    font-size: 0.9rem;
+    text-shadow: 0 1px 0 #fff, 0 -1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff;
+    fill: #000;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  div.controls {
+    position: absolute;
+    top: 2px;
+    background: #ddd;
+    padding-left: 5px;
+    border-radius: 5px;
+    -webkit-box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.4);
+    -moz-box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.4);
+    box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.4);
+  }
+
+  #TranslateButton {
+    position: relative;
+    float: right;
+    margin: 5px;
+  }
+
+  #textBox {
+    margin: 5px;
+  }
+
+  div.info {
+    position: absolute;
+    top: 15%;
+    float: left;
+    background: #fff;
+  }
+</style>
+<body>
+
+<div class="container">
+  <svg width="900" height="800"></svg>
+  <div class="controls">
+    What's your word?
+    <input id="textBox" value="Programming"/><button class="btn-primary" id="TranslateButton">Translate!</button>
+  </div>
+  <div class="info">
+  </div>
+</div>
+
+<script src="hcluster.js"></script>
+<script src="https://www.lactame.com/lib/ml/3.2.0/ml.min.js"></script>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<script src="https://d3js.org/topojson.v2.min.js"></script>
+<script src="https://unpkg.com/transliteration/lib/browser/transliteration.min.js"></script>
+
+<script type="text/javascript">
+
+let svg = d3.select("svg"), 
+    langArray=[],
+    mapData={},
+    transDict={},
+    transArray=[],
+    transDictKeys=[];
+
+d3.select(".btn")
+  .on("click", translateWord);
+
+d3.select("#textBox")
+  .on("keypress", function(){
+    if(d3.event.keyCode == 13){
+     translateWord();
+     this.select();
+    }
+  });
+
+createMap();
+translateWord();
+
+function translateWord(){
+  transDict={};
+  transDictKeys=[];
+  d3.json("languages.json",function(error, langArrayFull){
+    let sourceLang="EN",
+        sourceText = d3.select("#textBox").property("value");
+    let translatedLangs = 0;
+    langArray = langArrayFull.languages.filter(function(x){return x.europe});
+   
+    for (let lang of langArray){
+      let path = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" 
+                + sourceLang + "&tl=" + lang.code + "&dt=t&q=" + sourceText;
+      d3.json(path, function(error, data){
+        if (error) throw error;
+        lang.translation=data[0][0][0];
+        translatedLangs++;
+        lang.latin = transl(lang.translation).toLowerCase(); 
+        if(transDict[lang.latin]==undefined) {
+          transDict[lang.latin]={"languages":[]};
+          transDictKeys.push(lang.latin);
+        }
+        transDict[lang.latin].languages.push(lang);
+        if(translatedLangs==langArray.length){
+            computeColorsKMeans();
+            updateMap();
+        }
+      });
+    }
+  });
+}
+
+function createMap(){
+
+  var width = svg.attr("width"),
+      height = svg.attr("height");
+
+  d3.json("europa_final_wgs84_3.topojson", function(error, europa) {
+    if (error) throw error;
+  
+  mapData = topojson.feature(europa, europa.objects.europa);
+   
+  var projection = d3.geoConicEquidistant()
+                      .parallels([43,62])
+                      .rotate([-10,0])
+                      .fitSize([width, height], mapData);
+  var path = d3.geoPath().projection(projection);
+    
+    svg.append("g")
+      .attr("class", "countries")
+      .selectAll("path")
+      .data(mapData.features)
+      .enter()
+      .append("path")
+      .attr("class","country")
+      .attr("d", path)
+      .on("mouseover", showInfo)
+      .on("mouseout", clearInfo);
+      
+    svg.append("path")
+        .attr("class", "borders")
+        .attr("d", path(topojson.mesh(europa, europa.objects.europa, function(a, b) { return a !== b; })));
+    
+    var labels = svg.append("g").attr("class", "label-group");
+        labels.selectAll(".label")
+          .data(mapData.features)
+          .enter()
+          .append("text")
+          .attr("class", "label")
+          .attr("x", function(d) {
+            return path.centroid(d)[0];
+          })
+          .attr("y", function(d) {
+            return path.centroid(d)[1];
+          });
+
+      })
+}
+
+function showInfo(d){
+  let translation=langArray.find(function(x){ return x.code == d.properties.code }).translation,
+      transliteration=langArray.find(function(x){ return x.code == d.properties.code }).latin,
+      showTransliteration = !(translation.toLowerCase()==transliteration);
+d3.select(".info")
+.html("Language: <b>"+ d.properties.language +" (" + d.properties.code + ")" +
+"</b><br/>Translation: <b>"+ translation + "</b>"+ (showTransliteration ? "<br/>Transliteration: <b>" + transliteration +"</b>" : ""));
+}
+
+function clearInfo(d){
+  d3.select(".info").html("");
+}
+
+function computeColors(){
+  for (let i=0;i<transDictKeys.length;i++) {
+    let dimensions=[];
+    for (let j=0;j<transDictKeys.length;j++){
+      dimensions.push(normalizedEditDistance(transDictKeys[i],transDictKeys[j]));		
+    }
+    transDict[transDictKeys[i]].distance = dimensions;
+  }
+
+  let langCluster = hcluster()
+  .distance('euclidean')
+  .linkage('avg')
+  .verbose(false)
+  .posKey('distance')
+  .data(Object.values(transDict));
+
+  let transTree = (langCluster.tree());
+  traverseTreeAndColor(transTree,0,1);
+}
+
+function computeColorsPCA(){
+  transArray=[];
+  for (let i=0;i<transDictKeys.length;i++) {
+    let dimensions=[];
+    for (let j=0;j<transDictKeys.length;j++){
+      dimensions.push(normalizedEditDistance(transDictKeys[i],transDictKeys[j]));		
+    }
+    transArray.push(dimensions);
+  }
+
+  let analysis = new ML.PCA(transArray),
+      loadings = analysis.getLoadings();
+
+	for (let i=0;i<transArray.length;i++){
+    transDict[transDictKeys[i]].loading = loadings[0][i];
+    transArray[i].loading = loadings[0][i];
+  }
+  let minloading = Math.min.apply(Math, transArray.map(function(o){return o.loading}));
+  let factor = Math.max.apply(Math, transArray.map(function(o){return o.loading})) - minloading;
+
+  for(let trans in transDict){
+    let color = d3.interpolateRainbow((transDict[trans].loading-minloading) / factor);
+    for(let lang in transDict[trans].languages){
+      langArray.filter(function(x){return x.language == transDict[trans].languages[lang].language})[0].color = color;
+    }
+  }
+}
+
+function computeColorsKMeans(){
+  transArray=[];
+  for (let i=0;i<transDictKeys.length;i++) {
+    let dimensions=[];
+    for (let j=0;j<transDictKeys.length;j++){
+      dimensions.push(normalizedEditDistance(transDictKeys[i],transDictKeys[j]));		
+    }
+    transArray.push(dimensions);
+  }
+
+  let analysis = new ML.PCA(transArray),
+      loadings = analysis.getLoadings(),
+      factorArray=[],
+      tempArray=[],
+      usedFactors=3;
+      
+	for (let i=0;i<transArray.length;i++){
+    tempArray=[];
+    for (let j=0;j<usedFactors;j++){
+      tempArray[j]=loadings[j][i];
+    }
+    factorArray.push(tempArray);
+  }
+
+  let KMeansResult = new ML.KMeans(factorArray,5);
+
+  console.log(KMeansResult);
+}
+
+function updateMap(){
+  svg.selectAll(".country")
+      .data(mapData.features)
+      .style("fill", function(d){
+        return langArray.find(function(x){ return x.code == d.properties.code }).color;
+      });
+
+  svg.selectAll(".label")
+      .data(mapData.features)
+      .text(function(d) {
+        return langArray.find(function(x){ return x.code == d.properties.code }).translation;
+      });
+
+    arrangeLabels();
+}
+
+function arrangeLabels() {
+  var move = 1;
+  svg.selectAll(".label")
+  .attr("transform", null );
+
+  while(move > 0) {
+    move = 0;
+    svg.selectAll(".label")
+        .each(function() {
+          var that = this,
+              a = this.getBoundingClientRect();
+          svg.selectAll(".label")
+            .each(function() {
+              if(this != that) {
+                var b = this.getBoundingClientRect();
+                if((Math.abs(a.left - b.left) * 2 < (a.width + b.width)) &&
+                    (Math.abs(a.top - b.top) * 2 < (a.height + b.height))) {
+                  // overlap, move labels
+                  var dx = (Math.max(0, a.right - b.left) +
+                            Math.min(0, a.left - b.right)) * 0.01,
+                      dy = (Math.max(0, a.bottom - b.top) +
+                            Math.min(0, a.top - b.bottom)) * 0.02,
+                      tt = getTranslation(d3.select(this).attr("transform")),
+                      to = getTranslation(d3.select(that).attr("transform"));
+                  move += Math.abs(dx) + Math.abs(dy);
+                
+                  to = [ to[0] + dx, to[1] + dy ];
+                  tt = [ tt[0] - dx, tt[1] - dy ];
+                  d3.select(this).attr("transform", "translate(" + tt + ")");
+                  d3.select(that).attr("transform", "translate(" + to + ")");
+                  a = this.getBoundingClientRect();
+                }
+              }
+            });
+        });
+  }
+}
+
+function getTranslation(transform) {
+  if(transform==null){
+    return [0,0];
+  }
+  var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  g.setAttributeNS(null, "transform", transform);
+  var matrix = g.transform.baseVal.consolidate().matrix;
+  return [matrix.e, matrix.f];
+}
+
+
+
+	//console.log(observations);
+/*let analiza = new ML.PCA(observations);
+let ladunki = analiza.getLoadings();
+	for (let i=0;i<langArray.length;i++){
+		langArray[i].loading = ladunki[0][i];
+	}
+langArray.sort(function(a,b){return a.loading-b.loading});
+	for (let i=0;i<langArray.length;i++){
+		list.innerHTML +="<br/>"+langArray[i].language+": "+langArray[i].latin+ " (" +langArray[i].translation+")|"+langArray[i].loading ;
+  }
+  */
+
+
+
+
+//
+
+/*
+var margin = {top: 40, right: 90, bottom: 50, left: 90},
+width = 660 - margin.left - margin.right,
+height = 500 - margin.top - margin.bottom;
+
+// declares a tree layout and assigns the size
+var treemap = d3.tree()
+.size([width, height]);
+
+//  assigns the data to a hierarchy using parent-child relationships
+var nodes = d3.hierarchy(transTree);
+
+// maps the node data to the tree layout
+nodes = treemap(nodes);
+
+var svg = d3.select("body").append("svg")
+.attr("width", width + margin.left + margin.right)
+.attr("height", height + margin.top + margin.bottom);
+
+var g = svg.append("g")
+.attr("transform",
+    "translate(" + margin.left + "," + margin.top + ")");
+
+// adds the links between the nodes
+var link = g.selectAll(".link")
+.data( nodes.descendants().slice(1))
+.enter().append("path")
+  .attr("class", "link")
+  .attr("d", function(d) {
+     return "M" + d.y + "," + d.x
+       + "C" + (d.parent.y + d.y) / 2 + "," + d.x
+       + " " + (d.parent.y + d.y) / 2 + "," +  d.parent.x
+       + " " + d.parent.y + "," + d.parent.x;
+     });
+
+// adds each node as a group
+var node = g.selectAll(".node")
+.data(nodes.descendants())
+.enter().append('g')
+  .attr("class", "node");
+
+node.append("circle")
+  .attr("class", "circle")
+  .attr("r", 4.5)
+  .attr("cx", o => o.y)
+  .attr("cy", o => o.x)
+  .style('fill', function(d) { return d.data.color; });
+
+node.append('text')
+  .attr('dx',  o => o.y + 6)
+  .attr('dy', o => o.x +2)
+  .text(function(d) { 
+    if(d.data.languages!=undefined) console.log( d.data.languages[0].latin);
+    return d.data.languages!=undefined ? d.data.languages[0].latin : ''; });
+
+*/
+
+function traverseTreeAndColor(branch,min,max,level=0){
+  if(branch.children==undefined){
+    branch.color = d3.interpolateRainbow((max+min)/2);
+    for(let lang in branch.languages){
+      langArray.filter(function(x){return x.language == branch.languages[lang].language})[0].color=branch.color;
+    }
+  }else{
+    let childrenCount = branch.children.length-1;
+    for(let i=0;i<=childrenCount;i++){
+        traverseTreeAndColor(branch.children[i],min+i*((max-min)/(childrenCount+1)),min+(i+1)*((max-min)/(childrenCount+1)),level+1);
+    }
+  }
+}
+
+function normalizedEditDistance(a, b){
+  return getEditDistance(a,b)/(Math.max(a.length, b.length));
+}
+
+function getEditDistance(a, b){
+
+  if(a.length == 0) return b.length; 
+  if(b.length == 0) return a.length; 
+  
+  let matrix = [];
+
+  // increment along the first column of each row
+  let i;
+  for(i = 0; i <= b.length; i++){
+    matrix[i] = [i];
+  }
+
+  // increment each column in the first row
+  let j;
+  for(j = 0; j <= a.length; j++){
+    matrix[0][j] = j;
+  }
+
+  // Fill in the rest of the matrix
+  for(i = 1; i <= b.length; i++){
+    for(j = 1; j <= a.length; j++){
+      if(b.charAt(i-1) == a.charAt(j-1)){
+        matrix[i][j] = matrix[i-1][j-1];
+      } else {
+        matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, // substitution
+                                Math.min(matrix[i][j-1] + 1, // insertion
+                                         matrix[i-1][j] + 1)); // deletion
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+};
+  
+</script>
+</body>
+</html>
